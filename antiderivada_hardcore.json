@@ -1,1 +1,1 @@
-{"expr": "x**3", "antideriv": "x**4/4", "latex": "\\frac{x^{4}}{4}"}
+{"latex": "\\frac{x^{3}}{3}"}
