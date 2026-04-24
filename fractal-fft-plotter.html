@@ -1,0 +1,1351 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RAFAELIA · Fractal FFT Plotter · 12 Canais Ópticos</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Cinzel+Decorative:wght@400;700&family=Rajdhani:wght@300;400;600&display=swap');
+
+  :root {
+    /* 12 CANAIS — Canon-style extended gamut */
+    --ch00: #FF0000; /* R  — Red           */
+    --ch01: #00CC00; /* G  — Green         */
+    --ch02: #0044FF; /* B  — Blue          */
+    --ch03: #00CCCC; /* C  — Cyan          */
+    --ch04: #CC00CC; /* M  — Magenta       */
+    --ch05: #FFEE00; /* Y  — Yellow        */
+    --ch06: #111111; /* K  — Key (Black)   */
+    --ch07: #FF6600; /* Or — Orange        */
+    --ch08: #006600; /* Gr — Green Deep    */
+    --ch09: #660099; /* Vi — Violet        */
+    --ch10: #CC3366; /* Pk — Pink          */
+    --ch11: #E8E0D0; /* Wh — White/Light   */
+
+    --bg: #03020A;
+    --panel: #080614;
+    --border: #1a1230;
+    --text: #c8b8f0;
+    --dim: #4a3a70;
+    --accent: #7744ff;
+    --gold: #c8a020;
+    --ui-h: 280px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 13px;
+    overflow: hidden;
+    height: 100vh;
+    width: 100vw;
+    display: flex;
+    flex-direction: column;
+    user-select: none;
+  }
+
+  /* ── HEADER ── */
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 16px;
+    border-bottom: 1px solid var(--border);
+    background: rgba(4,2,12,0.95);
+    backdrop-filter: blur(8px);
+    z-index: 10;
+    flex-shrink: 0;
+    gap: 12px;
+  }
+  .logo {
+    font-family: 'Cinzel Decorative', serif;
+    font-size: 12px;
+    color: var(--gold);
+    letter-spacing: 3px;
+    white-space: nowrap;
+  }
+  .logo span { color: var(--accent); }
+  .subtitle {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 9px;
+    color: var(--dim);
+    letter-spacing: 2px;
+  }
+  .header-center { display: flex; flex-direction: column; align-items: center; }
+
+  /* mode buttons */
+  .mode-btns { display: flex; gap: 4px; }
+  .mode-btn {
+    padding: 3px 12px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--dim);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 1px;
+    cursor: pointer;
+    transition: all 0.2s;
+    border-radius: 2px;
+  }
+  .mode-btn.active, .mode-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: rgba(119,68,255,0.1);
+  }
+
+  /* ── MAIN LAYOUT ── */
+  .main {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+  }
+
+  /* ── CANVAS AREA ── */
+  .canvas-wrap {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+    cursor: crosshair;
+  }
+  canvas {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100% !important;
+    height: 100% !important;
+  }
+  #c-base   { z-index: 1; }
+  #c-layers { z-index: 2; opacity: 0.72; mix-blend-mode: screen; }
+  #c-fft    { z-index: 3; opacity: 0.55; mix-blend-mode: overlay; }
+  #c-ui     { z-index: 4; }
+
+  .coords-hud {
+    position: absolute;
+    bottom: 8px; left: 10px;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 9px;
+    color: rgba(200,184,240,0.5);
+    z-index: 5;
+    pointer-events: none;
+  }
+  .progress-bar {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, var(--accent), var(--gold));
+    transform-origin: left;
+    z-index: 6;
+    transition: transform 0.1s;
+    transform: scaleX(0);
+  }
+
+  /* ── RIGHT PANEL ── */
+  .panel {
+    width: 220px;
+    background: var(--panel);
+    border-left: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    overflow-x: hidden;
+    flex-shrink: 0;
+  }
+  .panel::-webkit-scrollbar { width: 3px; }
+  .panel::-webkit-scrollbar-thumb { background: var(--border); }
+
+  .p-section {
+    border-bottom: 1px solid var(--border);
+    padding: 8px 10px;
+  }
+  .p-title {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 2px;
+    color: var(--gold);
+    margin-bottom: 6px;
+    text-transform: uppercase;
+  }
+
+  /* ── 12 CHANNEL STRIPS ── */
+  .ch-grid { display: flex; flex-direction: column; gap: 3px; }
+  .ch-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .ch-swatch {
+    width: 10px; height: 10px;
+    border-radius: 1px;
+    flex-shrink: 0;
+  }
+  .ch-label {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 9px;
+    color: var(--dim);
+    width: 18px;
+  }
+  .ch-slider {
+    flex: 1;
+    -webkit-appearance: none;
+    height: 3px;
+    border-radius: 1px;
+    outline: none;
+    cursor: pointer;
+    background: var(--border);
+  }
+  .ch-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    cursor: pointer;
+  }
+  .ch-val {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 9px;
+    color: var(--text);
+    width: 24px;
+    text-align: right;
+  }
+  .ch-toggle {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    border: 1px solid var(--dim);
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: 0.2s;
+  }
+  .ch-toggle.on { background: currentColor; border-color: currentColor; }
+
+  /* ── CONTROLS ── */
+  .ctrl-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 4px;
+  }
+  .ctrl-label {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 9px;
+    color: var(--dim);
+    width: 54px;
+    flex-shrink: 0;
+  }
+  .ctrl-slider {
+    flex: 1;
+    -webkit-appearance: none;
+    height: 2px;
+    background: var(--border);
+    border-radius: 1px;
+    outline: none;
+    cursor: pointer;
+  }
+  .ctrl-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+  }
+  .ctrl-val {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 9px;
+    color: var(--text);
+    width: 36px;
+    text-align: right;
+  }
+
+  /* ── BUTTONS ── */
+  .btn-row { display: flex; gap: 4px; flex-wrap: wrap; }
+  .btn {
+    padding: 4px 8px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--dim);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 1px;
+    cursor: pointer;
+    transition: all 0.15s;
+    border-radius: 2px;
+  }
+  .btn:hover { border-color: var(--accent); color: var(--accent); background: rgba(119,68,255,0.08); }
+  .btn.primary { border-color: var(--gold); color: var(--gold); }
+  .btn.primary:hover { background: rgba(200,160,32,0.1); }
+
+  /* ── FFT MINI DISPLAY ── */
+  #fft-mini {
+    width: 100%;
+    height: 50px;
+    background: #000;
+    border-radius: 2px;
+    border: 1px solid var(--border);
+    margin-top: 4px;
+  }
+
+  /* ── JULIA SEED ── */
+  .julia-seed {
+    display: flex; gap: 4px; align-items: center; margin-top: 4px;
+  }
+  .seed-input {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 9px;
+    padding: 2px 4px;
+    width: 72px;
+    outline: none;
+    border-radius: 1px;
+  }
+  .seed-input:focus { border-color: var(--accent); }
+
+  /* ── LAYER BLEND MODES ── */
+  .blend-row { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 3px; }
+  .blend-btn {
+    padding: 2px 5px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--dim);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 8px;
+    cursor: pointer;
+    border-radius: 1px;
+    transition: 0.15s;
+  }
+  .blend-btn.active { border-color: var(--accent); color: #fff; background: rgba(119,68,255,0.2); }
+
+  /* ── PATTERN SELECTOR ── */
+  .pattern-grid { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 3px; }
+  .pat-btn {
+    padding: 3px 6px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--dim);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 8px;
+    cursor: pointer;
+    border-radius: 2px;
+    transition: 0.15s;
+  }
+  .pat-btn.active, .pat-btn:hover {
+    border-color: var(--gold);
+    color: var(--gold);
+    background: rgba(200,160,32,0.08);
+  }
+
+  /* ── INFO BOX ── */
+  .info-box {
+    background: #050310;
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    padding: 6px;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 8px;
+    color: var(--dim);
+    line-height: 1.6;
+    margin-top: 4px;
+  }
+  .info-box b { color: var(--text); }
+
+  /* ── BOTTOM STRIP ── */
+  .bottom-strip {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 4px 12px;
+    border-top: 1px solid var(--border);
+    background: rgba(4,2,12,0.9);
+    flex-shrink: 0;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 9px;
+    color: var(--dim);
+  }
+  .bs-sep { color: var(--border); }
+  .bs-val { color: var(--text); }
+
+  /* 12-channel thumb colors */
+  input[id="ch0"]::-webkit-slider-thumb  { background: var(--ch00); }
+  input[id="ch1"]::-webkit-slider-thumb  { background: var(--ch01); }
+  input[id="ch2"]::-webkit-slider-thumb  { background: var(--ch02); }
+  input[id="ch3"]::-webkit-slider-thumb  { background: var(--ch03); }
+  input[id="ch4"]::-webkit-slider-thumb  { background: var(--ch04); }
+  input[id="ch5"]::-webkit-slider-thumb  { background: var(--ch05); }
+  input[id="ch6"]::-webkit-slider-thumb  { background: var(--ch06); border: 1px solid #555; }
+  input[id="ch7"]::-webkit-slider-thumb  { background: var(--ch07); }
+  input[id="ch8"]::-webkit-slider-thumb  { background: var(--ch08); }
+  input[id="ch9"]::-webkit-slider-thumb  { background: var(--ch09); }
+  input[id="ch10"]::-webkit-slider-thumb { background: var(--ch10); }
+  input[id="ch11"]::-webkit-slider-thumb { background: var(--ch11); }
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header>
+  <div>
+    <div class="logo">RAFA<span>ELIA</span></div>
+    <div class="subtitle">FFT · FRACTAL · 12-CHANNEL OPTIC PLOTTER</div>
+  </div>
+  <div class="header-center">
+    <div class="mode-btns" id="modeBtns">
+      <button class="mode-btn active" onclick="setMode('mandelbrot')">MANDELBROT</button>
+      <button class="mode-btn" onclick="setMode('julia')">JULIA</button>
+      <button class="mode-btn" onclick="setMode('burning')">BURNING SHIP</button>
+      <button class="mode-btn" onclick="setMode('newton')">NEWTON</button>
+      <button class="mode-btn" onclick="setMode('tricorn')">TRICORN</button>
+    </div>
+  </div>
+  <div>
+    <div class="btn-row">
+      <button class="btn primary" onclick="renderAll()">▶ RENDER</button>
+      <button class="btn" onclick="resetView()">RESET</button>
+      <button class="btn" onclick="exportPNG()">EXPORT</button>
+    </div>
+  </div>
+</header>
+
+<!-- MAIN -->
+<div class="main">
+
+  <!-- CANVAS STACK -->
+  <div class="canvas-wrap" id="canvasWrap">
+    <div class="progress-bar" id="progress"></div>
+    <canvas id="c-base"></canvas>
+    <canvas id="c-layers"></canvas>
+    <canvas id="c-fft"></canvas>
+    <canvas id="c-ui"></canvas>
+    <div class="coords-hud" id="coordsHud">Re: — Im: — | z: 1.00</div>
+  </div>
+
+  <!-- RIGHT PANEL -->
+  <div class="panel">
+
+    <!-- 12 CHANNEL PLOTTER -->
+    <div class="p-section">
+      <div class="p-title">12 CANAIS · PLOTTER ÓPTICO</div>
+      <div class="ch-grid" id="chGrid"></div>
+    </div>
+
+    <!-- RENDER PARAMS -->
+    <div class="p-section">
+      <div class="p-title">PARÂMETROS FRACTAIS</div>
+
+      <div class="ctrl-row">
+        <span class="ctrl-label">ITER MAX</span>
+        <input type="range" class="ctrl-slider" id="sIter" min="32" max="1024" value="256" oninput="updateCtrl(this,'vIter')">
+        <span class="ctrl-val" id="vIter">256</span>
+      </div>
+      <div class="ctrl-row">
+        <span class="ctrl-label">ESCAPE R</span>
+        <input type="range" class="ctrl-slider" id="sEsc" min="2" max="64" value="4" step="0.5" oninput="updateCtrl(this,'vEsc')">
+        <span class="ctrl-val" id="vEsc">4.0</span>
+      </div>
+      <div class="ctrl-row">
+        <span class="ctrl-label">POWER</span>
+        <input type="range" class="ctrl-slider" id="sPow" min="2" max="8" value="2" step="0.1" oninput="updateCtrl(this,'vPow')">
+        <span class="ctrl-val" id="vPow">2.0</span>
+      </div>
+      <div class="ctrl-row">
+        <span class="ctrl-label">SMOOTH</span>
+        <input type="range" class="ctrl-slider" id="sSmooth" min="0" max="1" value="1" step="1" oninput="updateCtrl(this,'vSmooth')">
+        <span class="ctrl-val" id="vSmooth">ON</span>
+      </div>
+      <div class="ctrl-row">
+        <span class="ctrl-label">COL CYCLE</span>
+        <input type="range" class="ctrl-slider" id="sColCyc" min="1" max="64" value="12" oninput="updateCtrl(this,'vColCyc')">
+        <span class="ctrl-val" id="vColCyc">12</span>
+      </div>
+      <div class="ctrl-row">
+        <span class="ctrl-label">COL SHIFT</span>
+        <input type="range" class="ctrl-slider" id="sColShift" min="0" max="360" value="0" oninput="updateCtrl(this,'vColShift')">
+        <span class="ctrl-val" id="vColShift">0°</span>
+      </div>
+    </div>
+
+    <!-- JULIA SEED -->
+    <div class="p-section">
+      <div class="p-title">JULIA SEED · c = a + bi</div>
+      <div class="julia-seed">
+        <span class="ctrl-label">Re</span>
+        <input type="number" class="seed-input" id="juliaRe" value="-0.7269" step="0.001">
+        <span class="ctrl-label">Im</span>
+        <input type="number" class="seed-input" id="juliaIm" value="0.1889" step="0.001">
+      </div>
+      <div class="blend-row" id="juliaPresets" style="margin-top:5px">
+        <button class="blend-btn" onclick="setJulia(-0.7269,0.1889)">Dendrite</button>
+        <button class="blend-btn" onclick="setJulia(-0.4,0.6)">Spiral</button>
+        <button class="blend-btn" onclick="setJulia(0.285,0.01)">Island</button>
+        <button class="blend-btn" onclick="setJulia(-0.835,-0.232)">Rabbit</button>
+        <button class="blend-btn" onclick="setJulia(-1.476,0)">Cantor</button>
+        <button class="blend-btn" onclick="setJulia(0,-0.8)">Dragon</button>
+      </div>
+    </div>
+
+    <!-- FFT OVERLAY -->
+    <div class="p-section">
+      <div class="p-title">FFT · ESPECTRO ÓPTICO</div>
+      <div class="ctrl-row">
+        <span class="ctrl-label">FFT SIZE</span>
+        <input type="range" class="ctrl-slider" id="sFftSize" min="2" max="7" value="5" oninput="updateCtrl(this,'vFftSize')">
+        <span class="ctrl-val" id="vFftSize">32</span>
+      </div>
+      <div class="ctrl-row">
+        <span class="ctrl-label">FFT SCALE</span>
+        <input type="range" class="ctrl-slider" id="sFftScale" min="0" max="100" value="40" oninput="updateCtrl(this,'vFftScale')">
+        <span class="ctrl-val" id="vFftScale">40</span>
+      </div>
+      <div class="ctrl-row">
+        <span class="ctrl-label">FFT MODE</span>
+        <select id="sFftMode" style="background:transparent;border:1px solid var(--border);color:var(--text);font-family:'Share Tech Mono';font-size:9px;flex:1;padding:1px;outline:none;cursor:pointer;">
+          <option value="radial">RADIAL</option>
+          <option value="wave">WAVE RINGS</option>
+          <option value="polar">POLAR GRID</option>
+          <option value="interference">INTERF.</option>
+        </select>
+      </div>
+      <canvas id="fft-mini" width="200" height="50"></canvas>
+    </div>
+
+    <!-- OPTICAL LAYERS -->
+    <div class="p-section">
+      <div class="p-title">CAMADAS ÓPTICAS</div>
+      <div class="pattern-grid" id="patternBtns"></div>
+
+      <div class="ctrl-row" style="margin-top:6px">
+        <span class="ctrl-label">DENSITY</span>
+        <input type="range" class="ctrl-slider" id="sPatDens" min="1" max="20" value="8" oninput="updateCtrl(this,'vPatDens')">
+        <span class="ctrl-val" id="vPatDens">8</span>
+      </div>
+      <div class="ctrl-row">
+        <span class="ctrl-label">OPACITY</span>
+        <input type="range" class="ctrl-slider" id="sPatOp" min="0" max="100" value="55" oninput="updateCtrl(this,'vPatOp')">
+        <span class="ctrl-val" id="vPatOp">55</span>
+      </div>
+      <div class="ctrl-row">
+        <span class="ctrl-label">ROTATE</span>
+        <input type="range" class="ctrl-slider" id="sPatRot" min="0" max="360" value="0" oninput="updateCtrl(this,'vPatRot')">
+        <span class="ctrl-val" id="vPatRot">0°</span>
+      </div>
+    </div>
+
+    <!-- INFO -->
+    <div class="p-section">
+      <div class="p-title">ESTADO DO SISTEMA</div>
+      <div class="info-box" id="infoBox">
+        <b>Modo:</b> MANDELBROT<br>
+        <b>Zoom:</b> 1.00×<br>
+        <b>Centro:</b> −0.500 + 0.000i<br>
+        <b>Iter:</b> 256<br>
+        <b>Canais ativos:</b> 12/12<br>
+        <b>FFT:</b> RADIAL · 32pts<br>
+        <b>Padrão:</b> NONE
+      </div>
+    </div>
+
+  </div><!-- /panel -->
+</div><!-- /main -->
+
+<!-- BOTTOM STRIP -->
+<div class="bottom-strip">
+  <span>RE: <span class="bs-val" id="bs-re">−0.5000</span></span>
+  <span class="bs-sep">|</span>
+  <span>IM: <span class="bs-val" id="bs-im">0.0000</span></span>
+  <span class="bs-sep">|</span>
+  <span>ZOOM: <span class="bs-val" id="bs-zoom">1.00×</span></span>
+  <span class="bs-sep">|</span>
+  <span>IT: <span class="bs-val" id="bs-it">—</span></span>
+  <span class="bs-sep">|</span>
+  <span>PÍXELS: <span class="bs-val" id="bs-px">—</span></span>
+  <span class="bs-sep">|</span>
+  <span>TEMPO: <span class="bs-val" id="bs-time">—</span></span>
+  <span style="margin-left:auto; color:var(--dim)">CLIQUE: navegar · SCROLL: zoom · DRAG: pan</span>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════
+//  GLOBALS
+// ═══════════════════════════════════════════════
+const CHANNELS = [
+  { id:'R',  color:'#FF2200', r:255,g:34, b:0   },
+  { id:'G',  color:'#00CC44', r:0,  g:204,b:68  },
+  { id:'B',  color:'#2244FF', r:34, g:68, b:255  },
+  { id:'C',  color:'#00DDDD', r:0,  g:221,b:221 },
+  { id:'M',  color:'#DD00DD', r:221,g:0, b:221  },
+  { id:'Y',  color:'#FFEE00', r:255,g:238,b:0   },
+  { id:'K',  color:'#333333', r:30, g:30, b:30   },
+  { id:'Or', color:'#FF6600', r:255,g:102,b:0   },
+  { id:'Gr', color:'#006633', r:0,  g:102,b:51  },
+  { id:'Vi', color:'#8800BB', r:136,g:0, b:187  },
+  { id:'Pk', color:'#FF3366', r:255,g:51, b:102 },
+  { id:'Wh', color:'#D8D0C0', r:216,g:208,b:192 },
+];
+
+const PATTERNS = ['NONE','VORONOI','HALFTONE','HEXGRID','WAVE','FIBONACCI',
+                  'LISSAJOUS','POLAR','MOIRÉ','TORUS','INTERFERENCE','DIFFRACT'];
+
+let state = {
+  mode: 'mandelbrot',
+  cx: -0.5, cy: 0,
+  zoom: 1.0,
+  iter: 256,
+  escape: 4,
+  power: 2,
+  smooth: true,
+  colCycle: 12,
+  colShift: 0,
+  juliaRe: -0.7269,
+  juliaIm: 0.1889,
+  fftSize: 32,
+  fftScale: 40,
+  fftMode: 'radial',
+  pattern: 'NONE',
+  patDensity: 8,
+  patOpacity: 0.55,
+  patRotate: 0,
+  chWeights: new Array(12).fill(1.0),
+  chActive: new Array(12).fill(true),
+  dragging: false,
+  dragX: 0, dragY: 0,
+  rendering: false,
+};
+
+// ═══════════════════════════════════════════════
+//  CANVAS SETUP
+// ═══════════════════════════════════════════════
+const canvasWrap = document.getElementById('canvasWrap');
+const cBase   = document.getElementById('c-base');
+const cLayers = document.getElementById('c-layers');
+const cFft    = document.getElementById('c-fft');
+const cUi     = document.getElementById('c-ui');
+const ctxBase   = cBase.getContext('2d');
+const ctxLayers = cLayers.getContext('2d');
+const ctxFft    = cFft.getContext('2d');
+const ctxUi     = cUi.getContext('2d');
+const ctxMini   = document.getElementById('fft-mini').getContext('2d');
+
+function resizeCanvases() {
+  const w = canvasWrap.clientWidth;
+  const h = canvasWrap.clientHeight;
+  [cBase,cLayers,cFft,cUi].forEach(c => {
+    c.width = w; c.height = h;
+  });
+  document.getElementById('bs-px').textContent = `${w}×${h}`;
+  renderAll();
+}
+
+// ═══════════════════════════════════════════════
+//  BUILD UI
+// ═══════════════════════════════════════════════
+function buildChannelUI() {
+  const grid = document.getElementById('chGrid');
+  grid.innerHTML = '';
+  CHANNELS.forEach((ch, i) => {
+    const row = document.createElement('div');
+    row.className = 'ch-row';
+    row.innerHTML = `
+      <div class="ch-swatch" style="background:${ch.color}"></div>
+      <span class="ch-label">${ch.id}</span>
+      <input type="range" class="ch-slider" id="ch${i}" min="0" max="100" value="100"
+        oninput="updateChannel(${i},this.value)">
+      <span class="ch-val" id="chv${i}">100</span>
+      <div class="ch-toggle on" id="cht${i}" style="color:${ch.color}" onclick="toggleChannel(${i})"></div>
+    `;
+    grid.appendChild(row);
+  });
+}
+
+function buildPatternUI() {
+  const grid = document.getElementById('patternBtns');
+  grid.innerHTML = '';
+  PATTERNS.forEach(p => {
+    const btn = document.createElement('button');
+    btn.className = 'pat-btn' + (p === state.pattern ? ' active' : '');
+    btn.textContent = p;
+    btn.onclick = () => { state.pattern = p; buildPatternUI(); renderLayers(); };
+    grid.appendChild(btn);
+  });
+}
+
+function updateChannel(i, val) {
+  state.chWeights[i] = val / 100;
+  document.getElementById(`chv${i}`).textContent = val;
+  renderLayers();
+}
+
+function toggleChannel(i) {
+  state.chActive[i] = !state.chActive[i];
+  const t = document.getElementById(`cht${i}`);
+  t.classList.toggle('on', state.chActive[i]);
+  renderLayers();
+}
+
+function updateCtrl(el, valId) {
+  const v = parseFloat(el.value);
+  const id = el.id;
+  if (id === 'sIter')     { state.iter      = v; document.getElementById(valId).textContent = v; }
+  if (id === 'sEsc')      { state.escape    = v; document.getElementById(valId).textContent = v.toFixed(1); }
+  if (id === 'sPow')      { state.power     = v; document.getElementById(valId).textContent = v.toFixed(1); }
+  if (id === 'sSmooth')   { state.smooth    = v===1; document.getElementById(valId).textContent = v===1?'ON':'OFF'; }
+  if (id === 'sColCyc')   { state.colCycle  = v; document.getElementById(valId).textContent = v; }
+  if (id === 'sColShift') { state.colShift  = v; document.getElementById(valId).textContent = v+'°'; }
+  if (id === 'sFftSize')  { state.fftSize   = Math.pow(2,v); document.getElementById(valId).textContent = Math.pow(2,v); }
+  if (id === 'sFftScale') { state.fftScale  = v; document.getElementById(valId).textContent = v; }
+  if (id === 'sPatDens')  { state.patDensity = v; document.getElementById(valId).textContent = v; }
+  if (id === 'sPatOp')    { state.patOpacity = v/100; document.getElementById(valId).textContent = v; }
+  if (id === 'sPatRot')   { state.patRotate  = v; document.getElementById(valId).textContent = v+'°'; }
+  renderAll();
+}
+
+function setMode(m) {
+  state.mode = m;
+  document.querySelectorAll('.mode-btn').forEach((b,i) => {
+    b.classList.toggle('active', ['mandelbrot','julia','burning','newton','tricorn'][i]===m);
+  });
+  renderAll();
+}
+
+function setJulia(re,im) {
+  state.juliaRe = re; state.juliaIm = im;
+  document.getElementById('juliaRe').value = re;
+  document.getElementById('juliaIm').value = im;
+  if(state.mode==='julia') renderAll();
+}
+
+// ═══════════════════════════════════════════════
+//  FRACTAL CORE
+// ═══════════════════════════════════════════════
+function fractalIter(cx, cy) {
+  let zx = 0, zy = 0;
+  const maxI = state.iter;
+  const esc2 = state.escape * state.escape;
+  const p = state.power;
+  const mode = state.mode;
+  const jre = state.juliaRe, jim = state.juliaIm;
+
+  if (mode === 'julia') { zx = cx; zy = cy; cx = jre; cy = jim; }
+
+  let i = 0;
+  while (i < maxI) {
+    const r2 = zx*zx + zy*zy;
+    if (r2 > esc2) break;
+
+    let nzx, nzy;
+    if (mode === 'burning') {
+      nzx = zx*zx - zy*zy + cx;
+      nzy = Math.abs(2*zx*zy) + cy; // Burning Ship uses |...|
+    } else if (mode === 'newton') {
+      // Newton z³ - 1 = 0
+      const r4 = r2*r2; const d = 3*r4;
+      if(d<1e-10) break;
+      nzx = zx - (zx*(r4-1)-zy*0)/(3*(zx*zx-zy*zy));
+      nzy = zy - (zy*(r4-1)+0)/(3*(zx*zx-zy*zy));
+    } else if (mode === 'tricorn') {
+      nzx = zx*zx - zy*zy + cx;
+      nzy = -2*zx*zy + cy; // conjugate
+    } else if (p !== 2) {
+      // generic power
+      const r = Math.sqrt(r2);
+      const theta = Math.atan2(zy, zx);
+      const rp = Math.pow(r, p);
+      nzx = rp*Math.cos(p*theta) + cx;
+      nzy = rp*Math.sin(p*theta) + cy;
+    } else {
+      nzx = zx*zx - zy*zy + cx;
+      nzy = 2*zx*zy + cy;
+    }
+    zx = nzx; zy = nzy;
+    i++;
+  }
+
+  if (i >= maxI) return { it: maxI, zx, zy, escaped: false };
+
+  // Smooth coloring
+  let smooth = i;
+  if (state.smooth && i < maxI) {
+    const log2 = Math.log(2);
+    const zmod = Math.sqrt(zx*zx+zy*zy);
+    smooth = i + 1 - Math.log(Math.log(zmod))/log2;
+  }
+  return { it: i, smooth, zx, zy, escaped: true };
+}
+
+// ═══════════════════════════════════════════════
+//  12-CHANNEL COLOR MAPPING
+// ═══════════════════════════════════════════════
+function mapColor(res) {
+  if (!res.escaped) return [0,0,0,255];
+
+  const t = (res.smooth / state.colCycle + state.colShift/360) % 1.0;
+  const pi2 = Math.PI * 2;
+
+  // Compute per-channel contribution
+  let R=0,G=0,B=0, totW=0;
+
+  CHANNELS.forEach((ch, i) => {
+    if (!state.chActive[i]) return;
+    const w = state.chWeights[i];
+    if (w === 0) return;
+
+    // Each channel gets a phase offset and frequency
+    const freq = 1 + i * 0.7;
+    const phase = i * (pi2/12);
+    const v = 0.5 + 0.5 * Math.sin(t * pi2 * freq + phase);
+
+    R += ch.r * v * w;
+    G += ch.g * v * w;
+    B += ch.b * v * w;
+    totW += w;
+  });
+
+  if (totW > 0) { R /= totW; G /= totW; B /= totW; }
+  return [Math.min(255,R), Math.min(255,G), Math.min(255,B), 255];
+}
+
+// ═══════════════════════════════════════════════
+//  RENDER BASE FRACTAL
+// ═══════════════════════════════════════════════
+function renderBase() {
+  const w = cBase.width, h = cBase.height;
+  const imgData = ctxBase.createImageData(w, h);
+  const data = imgData.data;
+
+  const asp = w / h;
+  const scaleX = (3.5 / state.zoom) * asp / w;
+  const scaleY = (3.5 / state.zoom) / h;
+  const ox = state.cx - (3.5 / state.zoom) * asp * 0.5;
+  const oy = state.cy - (3.5 / state.zoom) * 0.5;
+
+  const t0 = performance.now();
+
+  // Row-by-row with progress
+  for (let py = 0; py < h; py++) {
+    const cy = oy + py * scaleY;
+    for (let px = 0; px < w; px++) {
+      const cx = ox + px * scaleX;
+      const res = fractalIter(cx, cy);
+      const [r,g,b,a] = mapColor(res);
+      const idx = (py*w+px)*4;
+      data[idx]=r; data[idx+1]=g; data[idx+2]=b; data[idx+3]=a;
+    }
+  }
+
+  ctxBase.putImageData(imgData, 0, 0);
+  const elapsed = ((performance.now()-t0)/1000).toFixed(2);
+  document.getElementById('bs-time').textContent = elapsed + 's';
+  document.getElementById('bs-it').textContent = state.iter;
+}
+
+// ═══════════════════════════════════════════════
+//  RENDER OPTICAL PATTERN LAYERS
+// ═══════════════════════════════════════════════
+function renderLayers() {
+  const w = cLayers.width, h = cLayers.height;
+  ctxLayers.clearRect(0,0,w,h);
+  if (state.pattern === 'NONE') return;
+
+  ctxLayers.save();
+  ctxLayers.globalAlpha = state.patOpacity;
+  ctxLayers.translate(w/2, h/2);
+  ctxLayers.rotate(state.patRotate * Math.PI / 180);
+  ctxLayers.translate(-w/2, -h/2);
+
+  const d = state.patDensity;
+  const pi2 = Math.PI*2;
+  const activeChannels = CHANNELS.filter((_,i)=>state.chActive[i]);
+
+  switch(state.pattern) {
+    case 'HEXGRID': {
+      const size = (w+h) / (d * 4);
+      const ww = size * 2, hh = Math.sqrt(3) * size;
+      for(let col=-2; col<w/ww+2; col++) {
+        for(let row=-2; row<h/hh+2; row++) {
+          const xo = col*ww + (row%2)*ww/2;
+          const yo = row*hh;
+          const ci = (col*7+row*13)%activeChannels.length;
+          const ch = activeChannels[ci]||CHANNELS[0];
+          ctxLayers.strokeStyle = ch.color;
+          ctxLayers.lineWidth = 0.8;
+          ctxLayers.beginPath();
+          for(let k=0;k<6;k++){
+            const ang = k*Math.PI/3;
+            k===0 ? ctxLayers.moveTo(xo+size*Math.cos(ang),yo+size*Math.sin(ang))
+                  : ctxLayers.lineTo(xo+size*Math.cos(ang),yo+size*Math.sin(ang));
+          }
+          ctxLayers.closePath();
+          ctxLayers.stroke();
+        }
+      }
+      break;
+    }
+    case 'VORONOI': {
+      const N = d * 8;
+      const pts = [];
+      for(let i=0;i<N;i++) pts.push({
+        x: Math.random()*w, y: Math.random()*h,
+        ch: CHANNELS[i%12]
+      });
+      const imgD = ctxLayers.createImageData(w,h);
+      for(let py=0;py<h;py+=2) for(let px=0;px<w;px+=2) {
+        let best=Infinity,bi=0;
+        pts.forEach((p,i)=>{const d2=(px-p.x)**2+(py-p.y)**2;if(d2<best){best=d2;bi=i;}});
+        const p=pts[bi];const idx=(py*w+px)*4;
+        imgD.data[idx]=p.ch.r;imgD.data[idx+1]=p.ch.g;imgD.data[idx+2]=p.ch.b;imgD.data[idx+3]=80;
+        const idx2=((py+1)*w+px)*4;
+        imgD.data[idx2]=p.ch.r;imgD.data[idx2+1]=p.ch.g;imgD.data[idx2+2]=p.ch.b;imgD.data[idx2+3]=80;
+        const idx3=(py*w+px+1)*4;
+        imgD.data[idx3]=p.ch.r;imgD.data[idx3+1]=p.ch.g;imgD.data[idx3+2]=p.ch.b;imgD.data[idx3+3]=80;
+      }
+      ctxLayers.putImageData(imgD,0,0);
+      break;
+    }
+    case 'HALFTONE': {
+      const gs = (w+h)/(d*6);
+      for(let gy=0;gy*gs<h;gy++) for(let gx=0;gx*gs<w;gx++) {
+        const px=gx*gs+gs/2, py=gy*gs+gs/2;
+        const ci=(gx+gy*3)%activeChannels.length;
+        const ch=activeChannels[ci]||CHANNELS[0];
+        const rad = gs * 0.4 * Math.sin((gx+gy)*0.4+state.colShift*0.01);
+        ctxLayers.fillStyle = ch.color;
+        ctxLayers.beginPath();
+        ctxLayers.arc(px,py,Math.abs(rad),0,pi2);
+        ctxLayers.fill();
+      }
+      break;
+    }
+    case 'WAVE': {
+      const freqs = d;
+      for(let ci=0;ci<Math.min(12,activeChannels.length);ci++) {
+        const ch=activeChannels[ci];
+        ctxLayers.strokeStyle=ch.color; ctxLayers.lineWidth=1;
+        for(let f=1;f<=freqs;f++) {
+          ctxLayers.beginPath();
+          for(let px=0;px<=w;px+=2) {
+            const py = h/2 + Math.sin(px/w*pi2*f + ci*0.5)*h/(f*2+2);
+            px===0?ctxLayers.moveTo(px,py):ctxLayers.lineTo(px,py);
+          }
+          ctxLayers.stroke();
+        }
+      }
+      break;
+    }
+    case 'FIBONACCI': {
+      let a=0,b=1;
+      for(let k=0;k<20+d;k++){
+        const c=a+b; a=b; b=c;
+        const ch=CHANNELS[k%12];
+        if(!state.chActive[k%12]) continue;
+        ctxLayers.strokeStyle=ch.color; ctxLayers.lineWidth=0.6;
+        ctxLayers.beginPath();
+        ctxLayers.arc(w/2,h/2,b%(Math.min(w,h)/2),0,pi2);
+        ctxLayers.stroke();
+        const theta=b*0.618*pi2;
+        const r2=b%(Math.min(w,h)/2);
+        ctxLayers.beginPath();
+        ctxLayers.moveTo(w/2,h/2);
+        ctxLayers.lineTo(w/2+r2*Math.cos(theta),h/2+r2*Math.sin(theta));
+        ctxLayers.stroke();
+        if(b>Math.min(w,h)*2) break;
+      }
+      break;
+    }
+    case 'LISSAJOUS': {
+      for(let ci=0;ci<Math.min(12,activeChannels.length);ci++) {
+        const ch=activeChannels[ci];
+        const fa=2+ci, fb=3+ci*0.7, phi=ci*Math.PI/6;
+        ctxLayers.strokeStyle=ch.color; ctxLayers.lineWidth=0.8;
+        ctxLayers.beginPath();
+        for(let t=0;t<=pi2*10;t+=0.02) {
+          const px=w/2+Math.sin(fa*t+phi)*w/2.2;
+          const py=h/2+Math.sin(fb*t)*h/2.2;
+          t<0.02?ctxLayers.moveTo(px,py):ctxLayers.lineTo(px,py);
+        }
+        ctxLayers.stroke();
+      }
+      break;
+    }
+    case 'POLAR': {
+      const rings = d*2;
+      for(let ri=1;ri<=rings;ri++) {
+        const r2=ri*(Math.min(w,h)/2)/rings;
+        const ch=CHANNELS[ri%12];
+        if(!state.chActive[ri%12]) continue;
+        ctxLayers.strokeStyle=ch.color; ctxLayers.lineWidth=0.6;
+        ctxLayers.beginPath(); ctxLayers.arc(w/2,h/2,r2,0,pi2); ctxLayers.stroke();
+      }
+      const spokes=12*d;
+      for(let si=0;si<spokes;si++){
+        const ang=si/spokes*pi2;
+        const ch=CHANNELS[si%12];
+        if(!state.chActive[si%12]) continue;
+        ctxLayers.strokeStyle=ch.color; ctxLayers.lineWidth=0.4;
+        ctxLayers.beginPath();
+        ctxLayers.moveTo(w/2,h/2);
+        ctxLayers.lineTo(w/2+Math.cos(ang)*Math.min(w,h)/2,h/2+Math.sin(ang)*Math.min(w,h)/2);
+        ctxLayers.stroke();
+      }
+      break;
+    }
+    case 'MOIRÉ': {
+      for(let layer=0;layer<3;layer++){
+        const spacing=(w+h)/(d*10+layer*20);
+        const ang=layer*Math.PI/3;
+        const ca=Math.cos(ang),sa=Math.sin(ang);
+        const ch=CHANNELS[(layer*4)%12];
+        if(!state.chActive[(layer*4)%12]) continue;
+        ctxLayers.strokeStyle=ch.color; ctxLayers.lineWidth=0.5;
+        for(let k=-Math.max(w,h);k<Math.max(w,h)*2;k+=spacing){
+          ctxLayers.beginPath();
+          ctxLayers.moveTo(-Math.max(w,h)*ca-Math.max(w,h)*sa+k*(-sa),
+                           -Math.max(w,h)*sa+Math.max(w,h)*ca+k*ca);
+          ctxLayers.lineTo(Math.max(w,h)*ca-Math.max(w,h)*sa+k*(-sa),
+                           Math.max(w,h)*sa+Math.max(w,h)*ca+k*ca);
+          ctxLayers.stroke();
+        }
+      }
+      break;
+    }
+    case 'TORUS': {
+      const cx2=w/2, cy2=h/2;
+      const R=Math.min(w,h)/3, r3=Math.min(w,h)/8;
+      const ut=32*d, vt=32;
+      for(let ui=0;ui<ut;ui++){
+        const u=ui/ut*pi2;
+        for(let vi=0;vi<vt;vi++){
+          const v=vi/vt*pi2;
+          const px=cx2+(R+r3*Math.cos(v))*Math.cos(u)*0.6;
+          const py=cy2+(R+r3*Math.cos(v))*Math.sin(u)*0.4+r3*Math.sin(v)*0.6;
+          const ch=CHANNELS[(ui+vi)%12];
+          if(!state.chActive[(ui+vi)%12]) continue;
+          ctxLayers.fillStyle=ch.color;
+          ctxLayers.fillRect(px-0.5,py-0.5,1,1);
+        }
+      }
+      break;
+    }
+    case 'INTERFERENCE': {
+      const pts2=[];
+      activeChannels.forEach((ch,i)=>{
+        pts2.push({x:w*0.2+i*w*0.07,y:h*0.2+i*h*0.06,ch,f:2+i*0.5});
+      });
+      const imgI=ctxLayers.createImageData(w,h);
+      for(let py=0;py<h;py+=2) for(let px=0;px<w;px+=2){
+        let sr=0,sg=0,sb=0;
+        pts2.forEach(p=>{
+          const dist=Math.sqrt((px-p.x)**2+(py-p.y)**2);
+          const v=Math.sin(dist/d*p.f);
+          sr+=p.ch.r*(v+1)/2;sg+=p.ch.g*(v+1)/2;sb+=p.ch.b*(v+1)/2;
+        });
+        const n=pts2.length||1;
+        const idx=(py*w+px)*4;
+        imgI.data[idx]=Math.min(255,sr/n);imgI.data[idx+1]=Math.min(255,sg/n);imgI.data[idx+2]=Math.min(255,sb/n);imgI.data[idx+3]=120;
+        imgI.data[(py*w+px+1)*4]=imgI.data[idx];imgI.data[(py*w+px+1)*4+1]=imgI.data[idx+1];imgI.data[(py*w+px+1)*4+2]=imgI.data[idx+2];imgI.data[(py*w+px+1)*4+3]=120;
+        imgI.data[((py+1)*w+px)*4]=imgI.data[idx];imgI.data[((py+1)*w+px)*4+1]=imgI.data[idx+1];imgI.data[((py+1)*w+px)*4+2]=imgI.data[idx+2];imgI.data[((py+1)*w+px)*4+3]=120;
+      }
+      ctxLayers.putImageData(imgI,0,0);
+      break;
+    }
+    case 'DIFFRACT': {
+      const cx2=w/2, cy2=h/2;
+      for(let ri=1;ri<=d*5;ri++){
+        const ra=ri*(Math.min(w,h)/2)/(d*5);
+        for(let ai=0;ai<ri*6+12;ai++){
+          const ang=ai/(ri*6+12)*pi2;
+          const px2=cx2+ra*Math.cos(ang), py2=cy2+ra*Math.sin(ang);
+          const ch=CHANNELS[(ri+ai)%12];
+          if(!state.chActive[(ri+ai)%12]) continue;
+          ctxLayers.fillStyle=ch.color;
+          ctxLayers.fillRect(px2-0.5,py2-0.5,1.5,1.5);
+        }
+      }
+      break;
+    }
+  }
+
+  ctxLayers.restore();
+}
+
+// ═══════════════════════════════════════════════
+//  FFT OVERLAY
+// ═══════════════════════════════════════════════
+function renderFFT() {
+  const w=cFft.width, h=cFft.height;
+  ctxFft.clearRect(0,0,w,h);
+  const N=state.fftSize;
+  const sc=state.fftScale/100;
+  const pi2=Math.PI*2;
+
+  // Generate pseudo-spectrum from active channels
+  const spectrum=[];
+  for(let k=0;k<N;k++){
+    let re=0,im=0;
+    CHANNELS.forEach((ch,i)=>{
+      if(!state.chActive[i]) return;
+      const w2=state.chWeights[i];
+      re+=w2*ch.r/255*Math.cos(pi2*k*i/N);
+      im+=w2*ch.g/255*Math.sin(pi2*k*i/N);
+    });
+    spectrum.push(Math.sqrt(re*re+im*im));
+  }
+  const maxS=Math.max(...spectrum)||1;
+
+  const mode=state.fftMode;
+  const cx=w/2, cy=h/2;
+
+  if(mode==='radial') {
+    for(let k=0;k<N;k++){
+      const ang=k/N*pi2;
+      const mag=spectrum[k]/maxS*sc*Math.min(w,h)/2;
+      const ch=CHANNELS[k%12];
+      ctxFft.strokeStyle=ch.color+'88';
+      ctxFft.lineWidth=1;
+      ctxFft.beginPath();
+      ctxFft.moveTo(cx,cy);
+      ctxFft.lineTo(cx+mag*Math.cos(ang),cy+mag*Math.sin(ang));
+      ctxFft.stroke();
+    }
+    // outer ring
+    ctxFft.strokeStyle='rgba(200,184,240,0.15)';
+    ctxFft.lineWidth=0.5;
+    ctxFft.beginPath();
+    for(let k=0;k<=N;k++){
+      const ang=k/N*pi2;
+      const mag=spectrum[k%N]/maxS*sc*Math.min(w,h)/2;
+      k===0?ctxFft.moveTo(cx+mag*Math.cos(ang),cy+mag*Math.sin(ang))
+           :ctxFft.lineTo(cx+mag*Math.cos(ang),cy+mag*Math.sin(ang));
+    }
+    ctxFft.stroke();
+
+  } else if(mode==='wave') {
+    for(let ring=1;ring<=N;ring+=4){
+      const r2=ring/N*sc*Math.min(w,h)/2;
+      const mag=spectrum[(ring/4|0)%N]/maxS;
+      const ch=CHANNELS[(ring/4)%12];
+      if(!state.chActive[(ring/4)%12]) continue;
+      ctxFft.strokeStyle=ch.color+'66';
+      ctxFft.lineWidth=0.6;
+      ctxFft.beginPath();
+      for(let t=0;t<=pi2;t+=0.05){
+        const rr=r2*(1+mag*0.3*Math.sin(ring*t));
+        k===0?ctxFft.moveTo(cx+rr*Math.cos(t),cy+rr*Math.sin(t))
+             :ctxFft.lineTo(cx+rr*Math.cos(t),cy+rr*Math.sin(t));
+      }
+      for(let t=0,k=0;t<=pi2;t+=0.05,k++){
+        const rr=r2*(1+mag*0.3*Math.sin(ring*t));
+        k===0?ctxFft.moveTo(cx+rr*Math.cos(t),cy+rr*Math.sin(t))
+             :ctxFft.lineTo(cx+rr*Math.cos(t),cy+rr*Math.sin(t));
+      }
+      ctxFft.closePath(); ctxFft.stroke();
+    }
+
+  } else if(mode==='polar') {
+    for(let k=0;k<N;k++){
+      const ang=k/N*pi2;
+      const mag=spectrum[k]/maxS*sc*Math.min(w,h)/2;
+      const ch=CHANNELS[k%12];
+      ctxFft.fillStyle=ch.color+'44';
+      ctxFft.beginPath();
+      ctxFft.arc(cx+mag*0.7*Math.cos(ang),cy+mag*0.7*Math.sin(ang),
+                 mag*0.3+1,0,pi2);
+      ctxFft.fill();
+    }
+
+  } else if(mode==='interference') {
+    const imgI=ctxFft.createImageData(w,h);
+    for(let py=0;py<h;py+=2) for(let px=0;px<w;px+=2){
+      let v=0;
+      spectrum.forEach((s,k)=>{
+        const ch=CHANNELS[k%12];
+        if(!state.chActive[k%12]) return;
+        const dist=Math.sqrt((px-cx)**2+(py-cy)**2);
+        v+=s/maxS*Math.cos(dist/20*(k+1));
+      });
+      v=Math.max(-1,Math.min(1,v/N));
+      const bright=(v+1)/2*200;
+      const idx=(py*w+px)*4;
+      imgI.data[idx]=bright;imgI.data[idx+1]=bright*0.5;imgI.data[idx+2]=bright*2;imgI.data[idx+3]=80;
+      imgI.data[(py*w+px+1)*4]=imgI.data[idx];imgI.data[(py*w+px+1)*4+1]=imgI.data[idx+1];
+      imgI.data[(py*w+px+1)*4+2]=imgI.data[idx+2];imgI.data[(py*w+px+1)*4+3]=80;
+    }
+    ctxFft.putImageData(imgI,0,0);
+  }
+
+  // Render FFT mini graph
+  const mw=200, mh=50;
+  ctxMini.fillStyle='#000'; ctxMini.fillRect(0,0,mw,mh);
+  ctxMini.lineWidth=1;
+  for(let k=0;k<N;k++){
+    const x=k/N*mw;
+    const barH=spectrum[k]/maxS*mh;
+    const ch=CHANNELS[k%12];
+    ctxMini.fillStyle=ch.color;
+    ctxMini.fillRect(x,mh-barH,mw/N-0.5,barH);
+  }
+  ctxMini.strokeStyle='rgba(200,184,240,0.3)';
+  ctxMini.lineWidth=0.5;
+  for(let k=0;k<=8;k++){
+    const y=k/8*mh;
+    ctxMini.beginPath(); ctxMini.moveTo(0,y); ctxMini.lineTo(mw,y); ctxMini.stroke();
+  }
+}
+
+// ═══════════════════════════════════════════════
+//  UI OVERLAY (crosshair, zoom indicator)
+// ═══════════════════════════════════════════════
+function renderUI() {
+  const w=cUi.width, h=cUi.height;
+  ctxUi.clearRect(0,0,w,h);
+  // crosshair center
+  ctxUi.strokeStyle='rgba(200,184,240,0.15)';
+  ctxUi.lineWidth=0.5;
+  ctxUi.beginPath(); ctxUi.moveTo(w/2,0); ctxUi.lineTo(w/2,h); ctxUi.stroke();
+  ctxUi.beginPath(); ctxUi.moveTo(0,h/2); ctxUi.lineTo(w,h/2); ctxUi.stroke();
+}
+
+// ═══════════════════════════════════════════════
+//  RENDER ALL + INFO UPDATE
+// ═══════════════════════════════════════════════
+function renderAll() {
+  const fftMode = document.getElementById('sFftMode').value;
+  state.fftMode = fftMode;
+  state.juliaRe = parseFloat(document.getElementById('juliaRe').value)||state.juliaRe;
+  state.juliaIm = parseFloat(document.getElementById('juliaIm').value)||state.juliaIm;
+
+  const prog = document.getElementById('progress');
+  prog.style.transform = 'scaleX(0.3)';
+
+  setTimeout(() => {
+    renderBase();
+    prog.style.transform = 'scaleX(0.7)';
+    renderLayers();
+    renderFFT();
+    renderUI();
+    prog.style.transform = 'scaleX(1)';
+    setTimeout(() => prog.style.transform = 'scaleX(0)', 400);
+    updateInfo();
+    document.getElementById('bs-zoom').textContent = state.zoom.toFixed(2)+'×';
+    document.getElementById('bs-re').textContent = state.cx.toFixed(4);
+    document.getElementById('bs-im').textContent = state.cy.toFixed(4);
+  }, 10);
+}
+
+function updateInfo() {
+  const active = state.chActive.filter(Boolean).length;
+  document.getElementById('infoBox').innerHTML =
+    `<b>Modo:</b> ${state.mode.toUpperCase()}<br>` +
+    `<b>Zoom:</b> ${state.zoom.toFixed(3)}×<br>` +
+    `<b>Centro:</b> ${state.cx.toFixed(4)} + ${state.cy.toFixed(4)}i<br>` +
+    `<b>Iter:</b> ${state.iter}<br>` +
+    `<b>Canais ativos:</b> ${active}/12<br>` +
+    `<b>FFT:</b> ${state.fftMode.toUpperCase()} · ${state.fftSize}pts<br>` +
+    `<b>Padrão:</b> ${state.pattern}`;
+}
+
+// ═══════════════════════════════════════════════
+//  NAVIGATION
+// ═══════════════════════════════════════════════
+function screenToWorld(px, py) {
+  const w=cBase.width, h=cBase.height;
+  const asp=w/h;
+  const sx=(3.5/state.zoom)*asp;
+  const sy=(3.5/state.zoom);
+  const cx=state.cx + (px/w-0.5)*sx;
+  const cy=state.cy + (py/h-0.5)*sy;
+  return {cx, cy};
+}
+
+canvasWrap.addEventListener('wheel', e => {
+  e.preventDefault();
+  const {cx,cy}=screenToWorld(e.offsetX,e.offsetY);
+  const factor = e.deltaY<0?1.5:0.667;
+  state.zoom *= factor;
+  // zoom toward cursor
+  state.cx = cx + (state.cx-cx)/factor;
+  state.cy = cy + (state.cy-cy)/factor;
+  renderAll();
+}, {passive:false});
+
+canvasWrap.addEventListener('mousedown', e => {
+  state.dragging=true; state.dragX=e.offsetX; state.dragY=e.offsetY;
+});
+canvasWrap.addEventListener('mouseup', () => state.dragging=false);
+canvasWrap.addEventListener('mouseleave', () => state.dragging=false);
+canvasWrap.addEventListener('mousemove', e => {
+  const {cx,cy}=screenToWorld(e.offsetX,e.offsetY);
+  document.getElementById('coordsHud').textContent =
+    `Re: ${cx.toFixed(6)}  Im: ${cy.toFixed(6)}  |  z: ${state.zoom.toFixed(3)}×`;
+  document.getElementById('bs-re').textContent=cx.toFixed(4);
+  document.getElementById('bs-im').textContent=cy.toFixed(4);
+
+  if(state.dragging){
+    const w=cBase.width, h=cBase.height;
+    const asp=w/h;
+    const sx=(3.5/state.zoom)*asp;
+    const sy=(3.5/state.zoom);
+    state.cx -= (e.offsetX-state.dragX)/w*sx;
+    state.cy -= (e.offsetY-state.dragY)/h*sy;
+    state.dragX=e.offsetX; state.dragY=e.offsetY;
+    renderAll();
+  }
+
+  // Click in Julia mode: update seed from Mandelbrot point
+  if(state.mode==='mandelbrot'){
+    const r=fractalIter(cx,cy);
+    if(r.escaped) document.getElementById('bs-it').textContent=`esc@${r.it}`;
+    else document.getElementById('bs-it').textContent=`∞`;
+  }
+});
+
+canvasWrap.addEventListener('dblclick', e => {
+  const {cx,cy}=screenToWorld(e.offsetX,e.offsetY);
+  state.cx=cx; state.cy=cy;
+  state.zoom*=3;
+  renderAll();
+});
+
+function resetView() {
+  state.cx=-0.5; state.cy=0; state.zoom=1;
+  renderAll();
+}
+
+function exportPNG() {
+  const tmp=document.createElement('canvas');
+  tmp.width=cBase.width; tmp.height=cBase.height;
+  const tc=tmp.getContext('2d');
+  tc.drawImage(cBase,0,0);
+  const op=parseFloat(cLayers.style.opacity||0.72);
+  tc.globalAlpha=op; tc.drawImage(cLayers,0,0);
+  tc.globalAlpha=parseFloat(cFft.style.opacity||0.55); tc.drawImage(cFft,0,0);
+  const a=document.createElement('a');
+  a.download='rafaelia-fractal.png';
+  a.href=tmp.toDataURL('image/png');
+  a.click();
+}
+
+// ═══════════════════════════════════════════════
+//  KEYBOARD SHORTCUTS
+// ═══════════════════════════════════════════════
+document.addEventListener('keydown', e => {
+  const k=e.key;
+  if(k==='r'||k==='R') resetView();
+  if(k==='+'||k==='=') { state.zoom*=1.5; renderAll(); }
+  if(k==='-') { state.zoom/=1.5; renderAll(); }
+  if(k==='m') setMode('mandelbrot');
+  if(k==='j') setMode('julia');
+  if(k==='b') setMode('burning');
+  if(k==='n') setMode('newton');
+  if(k==='e') exportPNG();
+});
+
+// ═══════════════════════════════════════════════
+//  INIT
+// ═══════════════════════════════════════════════
+buildChannelUI();
+buildPatternUI();
+window.addEventListener('resize', resizeCanvases);
+resizeCanvases();
+</script>
+</body>
+</html>
