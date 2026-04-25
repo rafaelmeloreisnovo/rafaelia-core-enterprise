@@ -1,0 +1,1 @@
+REFATORAÇÃO PENSANDO EM FAZER O CONTEÚDO QUE SEJA USAR QUALIDADE DE CONCEITOS ONDe deve ser reordenados e refazer o conceito atual hoje espalhado em um framework em possibilidad que esses ARQUIVOS converta em 15 macro areas de um framework operacional
